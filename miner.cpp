@@ -1,8 +1,12 @@
 #include "core.h"
 
-volatile unsigned int BlocksFoundCounter = 0;
-volatile unsigned int Difficulty = 0;
-unsigned int StartTimer = 0;
+unsigned int nBlocksFoundCounter = 0;
+unsigned int nBlocksAccepted = 0;
+unsigned int nBlocksRejected = 0;
+unsigned int nDifficulty = 0;
+unsigned int nBestHeight = 0;
+unsigned int nStartTimer = 0;
+bool isBlockSubmission = false;
 
 namespace Core
 {
@@ -21,7 +25,6 @@ namespace Core
 		
 		MinerThread() : BLOCK(NULL), fBlockFound(false), fNewBlock(true), THREAD(boost::bind(&MinerThread::PrimeMiner, this)) { }
 		
-		
 		/** Main Miner Thread. Bound to the class with boost. Might take some rearranging to get working with OpenCL. **/
 		void PrimeMiner()
 		{
@@ -35,14 +38,15 @@ namespace Core
 					/** Increase nNonce if the block hash is too large. **/
 					loop
 					{
-						LOCK(MUTEX);
+						//LOCK(MUTEX);
 						
 						if(fNewBlock || fBlockFound || !BLOCK)
 							break;
-						
-						Difficulty = BLOCK->nBits;
 
-						unsigned long nNonce = PrimeSieve(BLOCK->GetPrime(), BLOCK->nBits); 
+						nDifficulty = BLOCK->nBits;
+						BLOCK->nNonce = 0;
+
+						unsigned long nNonce = PrimeSieve(BLOCK->GetPrime(), BLOCK->nBits, BLOCK->nHeight); 
 
 						if((bool)nNonce)
 						{						
@@ -51,9 +55,19 @@ namespace Core
 		
 							if(GetPrimeBits(BLOCK->GetPrime(), 1) >= BLOCK->nBits)
 							{
-								fBlockFound = true;
-								BlocksFoundCounter++;
-								break;
+								if(BLOCK->nHeight == nBestHeight)
+								{
+									if(!isBlockSubmission)
+									{
+										isBlockSubmission = true;
+										printf("\n\n******* BLOCK FOUND *******\n\n");
+
+										fBlockFound = true;
+										fNewBlock = false;
+										nBlocksFoundCounter++;
+										break;
+									}
+								}
 							}
 
 						}
@@ -143,7 +157,7 @@ namespace Core
 			/** Initialize a Timer for the Hash Meter. **/
 			TIMER.Start();
 			
-			unsigned int nBestHeight = 0;
+			//unsigned int nBestHeight = 0;
 			loop
 			{
 				try
@@ -176,6 +190,7 @@ namespace Core
 					/** If there is a new block, Flag the Threads to Stop Mining. **/
 					if(nHeight != nBestHeight)
 					{
+						isBlockSubmission = false;
 						nBestHeight = nHeight;
 						printf("[MASTER] Coinshield Network: New Block %u\n", nHeight);
 							
@@ -186,12 +201,12 @@ namespace Core
 					/** Rudimentary Meter **/
 					if(TIMER.Elapsed() > 10)
 					{
-						unsigned int SecondsElapsed = (unsigned int)time(0) - StartTimer;
+						unsigned int SecondsElapsed = (unsigned int)time(0) - nStartTimer;
 						unsigned int nElapsed = TIMER.Elapsed();
 							
 						double SPS = (double) Searches() / nElapsed;
 						double PPS = (double) Primes() / nElapsed;
-						printf("[METERS] %u Block(s) Found | Height = %u | Difficulty  = %f | %02d:%02d:%02d\n", BlocksFoundCounter, nBestHeight, (double)Difficulty/10000000.0, (SecondsElapsed/3600)%60, (SecondsElapsed/60)%60, (SecondsElapsed)%60);
+						printf("[METERS] %u Block(s) ACC=%u REJ=%u| Height = %u | Diff = %f | %02d:%02d:%02d\n", nBlocksFoundCounter, nBlocksAccepted, nBlocksRejected, nBestHeight, (double)nDifficulty/10000000.0, (SecondsElapsed/3600)%60, (SecondsElapsed/60)%60, (SecondsElapsed)%60);
 							
 						TIMER.Reset();
 					}
@@ -215,7 +230,7 @@ namespace Core
 							/** If the block is good, tell the Mining Thread its okay to Mine. **/
 							if(BLOCK)
 							{
-								LOCK(THREADS[nIndex]->MUTEX);
+								//LOCK(THREADS[nIndex]->MUTEX);
 								
 								THREADS[nIndex]->BLOCK = BLOCK;
 								
@@ -237,7 +252,7 @@ namespace Core
 						else if(THREADS[nIndex]->fBlockFound)
 						{
 							printf("\nSubmitting Block...\n");
-							LOCK(THREADS[nIndex]->MUTEX);
+							//LOCK(THREADS[nIndex]->MUTEX);
 							
 							if(!THREADS[nIndex]->BLOCK)
 							{
@@ -260,6 +275,7 @@ namespace Core
 								printf("[MASTER] Block Accepted By Coinshield Network.\n");
 								
 								ResetThreads();
+								nBlocksAccepted++;
 							}
 							else if(RESPONSE == 201)
 							{
@@ -267,6 +283,9 @@ namespace Core
 								
 								THREADS[nIndex]->fNewBlock   = true;
 								THREADS[nIndex]->fBlockFound = false;
+
+								isBlockSubmission = false;
+								nBlocksRejected++;
 							}
 								
 							/** If the Response was Bad, Reconnect to Server. **/
@@ -314,7 +333,7 @@ int main(int argc, char *argv[])
 		nTimeout = boost::lexical_cast<int>(argv[4]);
 	
 	Core::InitializePrimes();
-	StartTimer = (unsigned int)time(0);
+	nStartTimer = (unsigned int)time(0);
 	printf("Initializing Miner %s:%s Threads = %i Timeout = %i\n", IP.c_str(), PORT.c_str(), nThreads, nTimeout);
 	Core::ServerConnection MINERS(IP, PORT, nThreads, nTimeout);
 	loop { Sleep(10); }

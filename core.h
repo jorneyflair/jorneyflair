@@ -52,7 +52,7 @@ namespace Core
 	unsigned int GetFractionalDifficulty(CBigNum composite);
 	std::vector<unsigned int> Eratosthenes(int nSieveSize);
 	bool DivisorCheck(CBigNum test);
-	unsigned long PrimeSieve(CBigNum BaseHash, unsigned int nDifficulty);
+	unsigned long PrimeSieve(CBigNum BaseHash, unsigned int nDifficulty, unsigned int nHeight);
 	bool PrimeCheck(CBigNum test, int checks);
 	CBigNum FermatTest(CBigNum n, CBigNum a);
 	bool Miller_Rabin(CBigNum n, int checks);
